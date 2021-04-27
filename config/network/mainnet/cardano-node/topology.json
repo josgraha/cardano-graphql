@@ -1,9 +1,14 @@
 {
   "Producers": [
     {
-      "addr": "relays-new.cardano-mainnet.iohk.io",
+      "addr": "private.cardano.us.iuxta-casus.com",
+      "port": 3000,
+      "valency": 1
+    },
+    {
+      "addr": "relay-1.cardano.us.iuxta-casus.com",
       "port": 3001,
-      "valency": 2
+      "valency": 1
     }
   ]
 }

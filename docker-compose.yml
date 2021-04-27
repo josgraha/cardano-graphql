@@ -14,63 +14,71 @@ services:
       - postgres_db
       - postgres_password
       - postgres_user
-    shm_size: '2gb'
+    shm_size: "2gb"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - /opt/cardano/cnode/volumes/data/pgdata:/var/lib/postgresql/data
     restart: on-failure
     logging:
-      driver: "json-file"
+      driver: "gcplogs"
       options:
-        max-size: "200k"
-        max-file: "10"
-  cardano-node:
-    image: inputoutput/cardano-node:${CARDANO_NODE_VERSION:-1.25.1}
-    command: [
-      "run",
-      "--config", "/config/config.json",
-      "--database-path", "/data/db",
-      "--socket-path", "/ipc/node.socket",
-      "--topology", "/config/topology.json"
-    ]
-    volumes:
-      - ./config/network/${NETWORK:-mainnet}/cardano-node:/config
-      - ./config/network/${NETWORK:-mainnet}/genesis:/genesis
-      - node-db:/data/db
-      - node-ipc:/ipc
+        labels: "node=postgres"
+  pgadmin:
+    image: dpage/pgadmin4:latest
     restart: on-failure
+    depends_on:
+      - postgres
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "josgraha@gmail.com"
+      PGADMIN_DEFAULT_PASSWORD: "secretS@uC3"
+      PGADMIN_LISTEN_PORT: 80
+    expose:
+      - 8080
+    ports:
+      - "8080:80"
+    volumes:
+      - /opt/cardano/cnode/volumes/data/pgadmin-data:/var/lib/pgadmin
+    links:
+      - "postgres:pgsql-server"
     logging:
-      driver: "json-file"
+      driver: "gcplogs"
       options:
-        max-size: "400k"
-        max-file: "20"
+        labels: "node=pgadmin"
   cardano-db-sync-extended:
     image: inputoutput/cardano-db-sync:${CARDANO_DB_SYNC_VERSION:-9.0.0}
-    command: [
-      "--config", "/config/cardano-db-sync/config.json",
-      "--socket-path", "/node-ipc/node.socket",
-      "--state-dir", "/data"
-    ]
+    command:
+      [
+        "--config",
+        "/config/cardano-db-sync/config.json",
+        "--socket-path",
+        "/node-ipc/node.socket",
+        "--state-dir",
+        "/data"
+      ]
     environment:
       - EXTENDED=true
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
     depends_on:
-      - cardano-node
       - postgres
     secrets:
       - postgres_password
       - postgres_user
       - postgres_db
     volumes:
-      - ./config/network/${NETWORK:-mainnet}:/config
-      - db-sync-data:/data
-      - node-ipc:/node-ipc
+      - type: bind
+        source: ./config/network/${NETWORK:-mainnet}
+        target: /config
+      - type: bind
+        source: /opt/cardano/cnode/volumes/data/db
+        target: /data
+      - type: bind
+        source: /opt/cardano/cnode/sockets
+        target: /node-ipc
     restart: on-failure
     logging:
-      driver: "json-file"
+      driver: "gcplogs"
       options:
-        max-size: "200k"
-        max-file: "10"
+        labels: "node=cardano-db-sync"
   hasura:
     build:
       context: ./packages/api-cardano-db-hasura/hasura
@@ -87,10 +95,9 @@ services:
       - postgres_password
       - postgres_user
     logging:
-      driver: "json-file"
+      driver: "gcplogs"
       options:
-        max-size: "200k"
-        max-file: "10"
+        labels: "node=hasura"
   cardano-graphql:
     build:
       context: .
@@ -103,6 +110,9 @@ services:
       - ALLOW_INTROSPECTION=true
       - CACHE_ENABLED=true
       - LOGGER_MIN_SEVERITY=${LOGGER_MIN_SEVERITY:-info}
+      - CARDANO_CLI_PATH=${CARDANO_CLI_PATH:-/opt/cardano/bin/cardano-cli}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*.iuxta-casus.com}
+      - CARDANO_NODE_SOCKET_PATH=${CARDANO_NODE_SOCKET_PATH:-/node-ipc/node.socket}
     expose:
       - ${API_PORT:-3100}
     ports:
@@ -113,12 +123,19 @@ services:
       - postgres_password
       - postgres_user
     logging:
-      driver: "json-file"
+      driver: "gcplogs"
       options:
-        max-size: "200k"
-        max-file: "10"
+        labels: "node=cardano-graphql"
     volumes:
-      - node-ipc:/node-ipc
+      - type: bind
+        source: /opt/cardano/cnode/sockets
+        target: /node-ipc
+      - type: bind
+        source: /home/cloudservice/.cabal/bin
+        target: /opt/cardano/bin
+      - type: bind
+        source: /opt/cardano/cnode/cardano-graphql/config/network/mainnet
+        target: /config
 secrets:
   postgres_db:
     file: ./config/secrets/postgres_db
@@ -126,8 +143,3 @@ secrets:
     file: ./config/secrets/postgres_password
   postgres_user:
     file: ./config/secrets/postgres_user
-volumes:
-  db-sync-data:
-  node-db:
-  node-ipc:
-  postgres-data:
